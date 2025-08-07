@@ -1,0 +1,31 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+
+# C++
+*.out
+*.exe
+*.obj
+*.o
+
+# VSCode and IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+*.sdf
+*.ipch
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Pybind11 build files
+build/
+dist/
+*.egg-info/
+*.so
