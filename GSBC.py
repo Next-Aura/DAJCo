@@ -3,211 +3,286 @@ from typing import Literal
 from scipy.sparse import issparse, spmatrix
 
 class BasicClassifier:
-    def __init__(self, max_iter: int=1000, learning_rate: float=0.001, verbose: int=0, fit_intercept: bool=True, tol: float=0.0001):
-        self.max_iter = max_iter
-        self.lr_rate = learning_rate
-        self.intercept = fit_intercept
-        self.verbose = verbose
-        self.tol = tol # Toleransi untuk early stopping dasar
-
-        self.weights = None
-        self.b = 0.0
-        self.loss_history= []
-        
-        # Atribut untuk multi-class
-        self.classes = None
-        self.n_classes = 0
-        self.binary_classifiers = [] # Diubah namanya dari 'classifier' agar lebih jelas untuk OvR
-
-    def sigmoid(self, z):
-        return 1 / (1 + np.exp(-z))
+    """
+    Gradient Supported Basic Classifier (GSBC) for binary and multi-class classification.
+    Uses logistic regression with gradient descent to minimize binary cross-entropy loss.
+    Supports One-vs-Rest (OvR) strategy for multi-class classification.
+    Handles both dense and sparse input matrices.
+    """
     
-    def binary_ce(self, y_true, y_pred_proba):
+    def __init__(self, max_iter: int=1000, learning_rate: float=0.001, verbose: int=0, 
+                 fit_intercept: bool=True, tol: float=0.0001):
+        """
+        Initialize the classifier with hyperparameters.
+
+        Args:
+            max_iter: Maximum number of gradient descent iterations.
+            learning_rate: Step size for gradient descent updates.
+            verbose: If 1, print training progress (epoch, loss, etc.).
+            fit_intercept: If True, include a bias term (intercept).
+            tol: Tolerance for early stopping based on loss convergence.
+
+        Raises:
+            ValueError: If max_iter, learning_rate, or tol are invalid.
+        """
+        if max_iter <= 0:
+            raise ValueError("max_iter must be positive")
+        if learning_rate <= 0:
+            raise ValueError("learning_rate must be positive")
+        if tol <= 0:
+            raise ValueError("tol must be positive")
+
+        self.max_iter = max_iter
+        self.learning_rate = learning_rate  # Changed from lr_rate for consistency
+        self.verbose = verbose
+        self.fit_intercept = fit_intercept
+        self.tol = tol
+
+        self.weights = None  # Model weights (initialized during fit)
+        self.b = 0.0        # Bias term (intercept)
+        self.loss_history = []  # Track loss at each iteration
+        self.classes = None     # Unique class labels
+        self.n_classes = 0      # Number of classes
+        self.binary_classifiers = []  # List of OvR classifiers for multi-class
+
+    def sigmoid(self, z: np.ndarray) -> np.ndarray:
+        """
+        Compute the sigmoid function for logistic regression.
+
+        Args:
+            z: Input values (X @ weights + bias).
+
+        Returns:
+            np.ndarray: Sigmoid output, probability between 0 and 1.
+        """
+        # Sigmoid: 1 / (1 + e^(-z)) maps any real number to (0,1)
+        return 1 / (1 + np.exp(-z))
+
+    def binary_ce(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> float:
+        """
+        Compute binary cross-entropy loss (log loss).
+
+        Args:
+            y_true: True binary labels (0 or 1).
+            y_pred_proba: Predicted probabilities from sigmoid.
+
+        Returns:
+            float: Mean binary cross-entropy loss.
+        """
+        # Prevent log(0) by clipping probabilities
         epsilon = 1e-15
         y_pred_proba = np.clip(y_pred_proba, epsilon, 1 - epsilon)
-
+        # Binary cross-entropy: -mean(y * log(p) + (1-y) * log(1-p))
         loss = -(y_true * np.log(y_pred_proba) + (1 - y_true) * np.log(1 - y_pred_proba))
         return np.mean(loss)
-    
-    def grad(self, X_scaled: np.ndarray | spmatrix,  y_true: np.ndarray) -> tuple[np.ndarray, float]:
-        # Logika gradien sudah disatukan dan berlaku untuk sparse atau dense
-        z = X_scaled @ self.weights
+
+    def grad(self, X: np.ndarray | spmatrix, y_true: np.ndarray) -> tuple[np.ndarray, float]:
+        """
+        Compute gradients of the binary cross-entropy loss w.r.t. weights and bias.
+
+        Args:
+            X: Input features (n_samples, n_features), dense or sparse.
+            y_true: True binary labels (n_samples,).
+
+        Returns:
+            tuple: Gradients for weights (np.ndarray) and bias (float).
+        """
+        # Compute predictions: z = Xw + b, p = sigmoid(z)
+        z = X @ self.weights
+        if self.fit_intercept:
+            z += self.b
         y_pred_proba = self.sigmoid(z)
 
+        # Error: difference between predicted probabilities and true labels
         error = y_pred_proba - y_true
 
-        grad_w = (X_scaled.T @ error) / X_scaled.shape[0] # Menggunakan X_scaled.shape[0] untuk jumlah sampel
-        grad_b = np.mean(error)
+        # Gradient w.r.t. weights: (1/n) * X^T * error
+        grad_w = X.T @ error / X.shape[0]
+        # Gradient w.r.t. bias: mean(error) if intercept is fitted
+        grad_b = np.mean(error) if self.fit_intercept else 0.0
 
         return grad_w, grad_b
-    
-    def fit(self, X_train, y_train):
-        # --- Pre-processing Input X ---
-        if not issparse(X_train): # Mengecek apakah sparse atau tidak di awal
-            if X_train.ndim == 1:
-                X_processed = X_train.reshape(-1, 1)
-            else:
-                X_processed = X_train
-            X_processed = np.asarray(X_processed) # Pastikan NumPy array
+
+    def fit(self, X_train: np.ndarray | spmatrix, y_train: np.ndarray):
+        """
+        Train the classifier using gradient descent.
+
+        For binary classification, trains a single logistic regression model.
+        For multi-class, trains one binary classifier per class using One-vs-Rest (OvR).
+
+        Args:
+            X_train: Training features (n_samples, n_features), dense or sparse.
+            y_train: Training target labels (n_samples,).
+
+        Raises:
+            ValueError: If input data contains NaN/Inf or mismatched shapes.
+        """
+        # Preprocess input X
+        if not issparse(X_train):
+            X_processed = X_train.reshape(-1, 1) if X_train.ndim == 1 else np.asarray(X_train)
         else:
-            X_processed = X_train # Biarkan sparse jika memang sparse
+            X_processed = X_train
 
         num_samples, num_features = X_processed.shape
 
-        # --- Pre-processing Input y ---
-        y_processed = np.asarray(y_train).flatten() # Pastikan y selalu 1D NumPy array
+        # Preprocess input y
+        y_processed = np.asarray(y_train).flatten()
 
-        # --- Validasi Data ---
-        # Perbaikan: Lebih spesifik dalam menangani TypeError atau hilangkan jika tidak diperlukan
+        # Validate input data
         if issparse(X_processed):
             if not np.all(np.isfinite(X_processed.data)):
-                raise ValueError("Input features (X_train) contains NaN or Infinity values in its data. Please clean your data.")
+                raise ValueError("X_train contains NaN or Infinity values in its data.")
         else:
             if not np.all(np.isfinite(X_processed)):
-                raise ValueError("Input features (X_train) contains NaN or Infinity values. Please clean your data.")
-        
+                raise ValueError("X_train contains NaN or Infinity values.")
         if not np.all(np.isfinite(y_processed)):
-            raise ValueError("Input target (y_train) contains NaN or Infinity values. Please clean your data.")
-
-        if X_processed.shape[0] != y_processed.shape[0]:
+            raise ValueError("y_train contains NaN or Infinity values.")
+        if num_samples != y_processed.shape[0]:
             raise ValueError(
-                f"Number of samples in X_train ({X_processed.shape[0]}) "
-                f"must match number of samples in y_train ({y_processed.shape[0]})."
+                f"X_train samples ({num_samples}) must match y_train samples ({y_processed.shape[0]})."
             )
 
-        # --- Identifikasi Kelas Unik ---
+        # Identify unique classes
         self.classes = np.unique(y_processed)
         self.n_classes = len(self.classes)
-        self.loss_history = [] # Reset loss history setiap kali fit dipanggil
+        self.loss_history = []
 
-        # --- Logika Pelatihan ---
+        if self.n_classes < 2:
+            raise ValueError("At least 2 unique class labels are required.")
+
         if self.n_classes == 2:
-            # === Klasifikasi Biner ===
+            # Binary classification
+            # Initialize weights if None or mismatched shape
             if self.weights is None or self.weights.shape[0] != num_features:
                 self.weights = np.zeros(num_features)
-            self.b = 0.0 # Reset bias
+            self.b = 0.0
 
             for i in range(self.max_iter):
+                # Compute gradients and update parameters
                 grad_w, grad_b = self.grad(X_processed, y_processed)
+                self.weights -= self.learning_rate * grad_w
+                if self.fit_intercept:
+                    self.b -= self.learning_rate * grad_b
 
-                self.weights -= self.lr_rate * grad_w
-                if self.intercept:
-                    self.b -= self.lr_rate * grad_b
-
-                z_current = X_processed @ self.weights
-                if self.intercept:
-                    z_current += self.b
-
-                y_proba_current = self.sigmoid(z_current)
-                loss = self.binary_ce(y_processed, y_proba_current)
+                # Compute loss
+                z = X_processed @ self.weights + (self.b if self.fit_intercept else 0)
+                y_proba = self.sigmoid(z)
+                loss = self.binary_ce(y_processed, y_proba)
                 self.loss_history.append(loss)
 
-                # Cek NaN/Inf
-                if not np.all(np.isfinite(self.weights)) or (self.intercept and not np.isfinite(self.b)):
-                    print(f"Warning: Weights or bias became NaN/Inf at epoch {i + 1}. Stopping training early.")
+                # Check numerical stability
+                if not np.all(np.isfinite(self.weights)) or (self.fit_intercept and not np.isfinite(self.b)):
+                    print(f"Warning: Weights or bias became NaN/Inf at epoch {i + 1}. Stopping training.")
                     break
                 if not np.isfinite(loss):
-                    print(f"Warning: Loss became NaN/Inf at epoch {i + 1}. Stopping training early.")
+                    print(f"Warning: Loss became NaN/Inf at epoch {i + 1}. Stopping training.")
                     break
 
-                # Early Stopping
+                # Early stopping based on loss convergence
                 if i > 0 and abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
-                    print(f"Early stopping at epoch {i+1}: Loss change ({abs(self.loss_history[-1] - self.loss_history[-2]):.6f}) below tolerance ({self.tol:.6f}).")
+                    if self.verbose:
+                        print(f"Early stopping at epoch {i+1}: Loss change ({abs(self.loss_history[-1] - self.loss_history[-2]):.6f}) below tolerance ({self.tol:.6f}).")
                     break
 
-                # Perbaikan: Pindahkan verbose ke dalam loop
-                if self.verbose == 1:
-                    print(f"Epoch {i+1}/{self.max_iter} - Loss: {loss:.6f}")
+                # Print progress if verbose
+                if self.verbose:
+                    print(f"Epoch {i+1}/{self.max_iter} - Loss: {loss:.6f}, Avg Weight: {np.mean(self.weights):.6f}")
 
-        elif self.n_classes > 2:
-            # === Klasifikasi Multi-Class dengan OvR ===
-            self.binary_classifiers = [] # Reset list classifier
-            print(f"Training {self.n_classes} binary classifiers using One-vs-Rest (OvR) strategy...")
-            
-            # Loop untuk setiap kelas unik
-            for class_label in self.classes:
-                if self.verbose == 1: # Print detail training OvR jika verbose
-                    print(f"  Training classifier for class {class_label} vs all others...")
-                
-                # Buat label biner untuk OvR: 1 jika sampel adalah class_label, 0 jika bukan
-                y_ovr = (y_processed == class_label).astype(int)
-                
-                # Buat instance baru dari BasicClassifier untuk setiap OvR
-                # Penting: Setiap OvR classifier harus punya hyperparameter sendiri
-                # Kita salin hyperparameter dari main classifier, verbose untuk OvR internal kita set 0 agar tidak terlalu ramai
-                clf = BasicClassifier(max_iter=self.max_iter, 
-                                      learning_rate=self.lr_rate, 
-                                      verbose=0, # Atur verbose internal menjadi 0
-                                      fit_intercept=self.intercept, 
-                                      tol=self.tol) # Menggunakan tol yang sama
-                
-                # Latih classifier biner ini
-                clf.fit(X_processed, y_ovr) # X_processed di sini adalah data asli
-
-                self.binary_classifiers.append(clf)
         else:
-           raise ValueError("Class label must have at least 2 types.")
+            # Multi-class classification using One-vs-Rest
+            self.binary_classifiers = []
+            if self.verbose:
+                print(f"Training {self.n_classes} binary classifiers using One-vs-Rest (OvR) strategy...")
+
+            # Aggregate loss for monitoring
+            avg_loss_history = []
+
+            for class_label in self.classes:
+                if self.verbose:
+                    print(f"  Training classifier for class {class_label} vs rest...")
+
+                # Create binary labels: 1 for current class, 0 for others
+                y_ovr = (y_processed == class_label).astype(int)
+
+                # Train a binary classifier with same hyperparameters
+                clf = BasicClassifier(
+                    max_iter=self.max_iter,
+                    learning_rate=self.learning_rate,
+                    verbose=0,  # Suppress verbose for individual classifiers
+                    fit_intercept=self.fit_intercept,
+                    tol=self.tol
+                )
+                clf.fit(X_processed, y_ovr)
+                self.binary_classifiers.append(clf)
+
+                # Aggregate loss from this classifier
+                avg_loss_history.append(clf.loss_history)
+
+            # Average loss across all OvR classifiers for monitoring
+            if avg_loss_history:
+                self.loss_history = [np.mean([lh[i] for lh in avg_loss_history if i < len(lh)]) 
+                                   for i in range(max(len(lh) for lh in avg_loss_history))]
 
     def predict_proba(self, X_test: np.ndarray | spmatrix) -> np.ndarray:
-        # --- Pre-processing Input X_test ---
+        """
+        Predict class probabilities for test data.
+
+        Args:
+            X_test: Test features (n_samples, n_features), dense or sparse.
+
+        Returns:
+            np.ndarray: Predicted probabilities. For binary: (n_samples,). For multi-class: (n_samples, n_classes).
+
+        Raises:
+            ValueError: If model is not trained or invalid.
+        """
+        # Preprocess input
         if not issparse(X_test):
-            if X_test.ndim == 1:
-                X_processed = X_test.reshape(-1, 1)
-            else:
-                X_processed = X_test
-            X_processed = np.asarray(X_processed)
+            X_processed = X_test.reshape(-1, 1) if X_test.ndim == 1 else np.asarray(X_test)
         else:
             X_processed = X_test
 
-        if self.n_classes == 0: # Cek apakah model sudah dilatih
-             raise ValueError("Model not trained. Call fit() first.")
-        
-        # --- Logika Prediksi Probabilitas ---
+        if self.n_classes == 0:
+            raise ValueError("Model not trained. Call fit() first.")
+
         if self.n_classes == 2:
-            # === Prediksi Biner ===
-            # Pastikan weights dan b ada jika model biner yang dilatih
+            # Binary classification
             if self.weights is None:
-                raise ValueError("Weight is none, try to fit the model with dataset first before predicting")
+                raise ValueError("Weights not initialized. Call fit() first.")
+            z = X_processed @ self.weights + (self.b if self.fit_intercept else 0)
+            return self.sigmoid(z)
 
-            z = X_processed @ self.weights
-            if self.intercept:
-               z += self.b
-            proba = self.sigmoid(z)
-            return proba
-        
-        elif self.n_classes > 2:
-            # === Prediksi Multi-Class dengan OvR ===
-            if not self.binary_classifiers:
-                raise ValueError("OvR classifiers not trained. Call fit() first for multi-class data.")
-            
-            # Perbaikan: Syntax np.zeros()
-            all_probas = np.zeros((X_processed.shape[0], self.n_classes))
-
-            # Untuk setiap classifier biner yang sudah dilatih
-            for i, clf in enumerate(self.binary_classifiers):
-                # Dapatkan probabilitas kelas 1 (probabilitas untuk kelas yang dilatih)
-                class_proba = clf.predict_proba(X_processed)
-                all_probas[:, i] = class_proba
-            
-            # Perbaikan: Pindahkan return ke luar loop
-            return all_probas
         else:
-           raise ValueError("Target label must have at least 2 types")
-      
+            # Multi-class classification
+            if not self.binary_classifiers:
+                raise ValueError("OvR classifiers not trained. Call fit() first.")
+            
+            # Collect probabilities from each OvR classifier
+            all_probas = np.zeros((X_processed.shape[0], self.n_classes))
+            for i, clf in enumerate(self.binary_classifiers):
+                all_probas[:, i] = clf.predict_proba(X_processed)
+            return all_probas
+
     def predict(self, X_test: np.ndarray | spmatrix) -> np.ndarray:
-        # Dapatkan probabilitas terlebih dahulu
-        probas = self.predict_proba(X_test) # Panggil predict_proba untuk mengurus X_test processing
+        """
+        Predict class labels for test data.
+
+        Args:
+            X_test: Test features (n_samples, n_features), dense or sparse.
+
+        Returns:
+            np.ndarray: Predicted class labels (n_samples,).
+
+        Raises:
+            ValueError: If model is not trained or invalid.
+        """
+        probas = self.predict_proba(X_test)
 
         if self.n_classes == 2:
-            pred_class = (probas >= 0.5).astype(int)
-        elif self.n_classes > 2:
-            pred_class = np.argmax(probas, axis=1)
-
-            # Perbaikan: Cek self.classes dan len(self.classes)
-            if self.classes is not None and len(self.classes) == self.n_classes:
-                # Mapping kembali indeks ke label kelas asli jika kelasnya bukan 0, 1, 2...
-                pred_class = np.array([self.classes[idx] for idx in pred_class])
+            # Binary classification: threshold at 0.5
+            return (probas >= 0.5).astype(int)
         else:
-            raise ValueError("Model is not trained or invalid number of class.")
-        
-        return pred_class
+            # Multi-class: select class with highest probability
+            pred_indices = np.argmax(probas, axis=1)
+            # Map indices to original class labels
+            return np.array([self.classes[idx] for idx in pred_indices])
