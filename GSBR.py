@@ -1,240 +1,188 @@
 import numpy as np
 from typing import Literal
 
-class BasicRegressor():
+class BasicRegressor:
     """
-    Gradient Supported Basic Regressor (GSBR) - Sebuah model regresi linear
-    yang diimplementasikan dari nol menggunakan Batch Gradient Descent.
-
-    Model ini mendukung regularisasi L1, L2, dan Elastic Net, serta fitur
-    fit_intercept dan early stopping berbasis toleransi loss.
-
-    Attributes:
-        max_iter (int): Jumlah maksimum iterasi (epoch) untuk pelatihan.
-        learning_rate (float): Tingkat pembelajaran untuk pembaruan bobot.
-                                (Saat ini menggunakan fixed learning rate).
-        verbose (int): Level verbosity. 0 untuk tidak ada output, 1 untuk mencetak
-                       progress training per iterasi.
-        penalty (Literal["L1", "L2", "elasticnet"] | None): Jenis regularisasi
-                                                              yang digunakan.
-                                                              'L1' untuk Lasso,
-                                                              'L2' untuk Ridge,
-                                                              'elasticnet' untuk
-                                                              kombinasi keduanya,
-                                                              atau None untuk tanpa
-                                                              regularisasi.
-        alpha (float): Kekuatan (magnitude) regularisasi. Semakin tinggi nilainya,
-                       semakin besar penalti terhadap bobot yang besar.
-        l1_ratio (float): Proporsi regularisasi L1 dalam Elastic Net.
-                          Digunakan jika penalty='elasticnet'.
-                          0.0 berarti murni L2, 1.0 berarti murni L1.
-        fit_intercept (bool): Jika True, model akan menghitung bias/intercept.
-                              Jika False, diasumsikan regresi melewati origin (0,0).
-        tol (float): Toleransi untuk early stopping. Pelatihan berhenti jika
-                     perubahan loss antara dua iterasi berturut-turut kurang
-                     dari nilai ini.
-
-        loss_history (list): List yang menyimpan nilai loss pada setiap iterasi.
-        weights (np.ndarray): Bobot (koefisien) model setelah pelatihan.
-        b (float): Bias (intercept) model setelah pelatihan.
+    Gradient Supported Basic Regressor (GSBR) for linear regression with optional regularization.
+    Implements gradient descent to minimize mean squared error (MSE) or root mean squared error (RMSE)
+    with L1, L2, or ElasticNet penalties.
+    """
+    
+    def __init__(self, max_iter: int=100, learning_rate: float=0.01, verbose: int=0, 
+                 penalty: Literal["l1", "l2", "elasticnet"] | None="l2", 
+                 alpha: float=0.0001, l1_ratio: float=0.5, 
+                 fit_intercept: bool=True, tol: float=0.0001, 
+                 loss: Literal["mse", "rmse"] | None="mse"):
         """
-    def __init__(self, max_iter: int=100, learning_rate: float=0.01, verbose: int=0, penalty: Literal["l1", "l2", "elasticnet"] | None="l2", alpha: float=0.0001, l1_ratio: float=0.5, fit_intercept: bool=True, tol: float=0.0001, loss: Literal["mse", "rmse"] | None="mse"):
+        Initialize the regressor with hyperparameters.
+
+        Args:
+            max_iter: Maximum number of gradient descent iterations.
+            learning_rate: Step size for gradient descent updates.
+            verbose: If 1, print training progress (epoch, weights, bias, loss).
+            penalty: Regularization type ('l1', 'l2', 'elasticnet', or None).
+            alpha: Regularization strength.
+            l1_ratio: Mixing parameter for ElasticNet (0 = L2, 1 = L1).
+            fit_intercept: If True, include a bias term (intercept).
+            tol: Tolerance for early stopping based on loss convergence.
+            loss: Loss function to minimize ('mse' or 'rmse').
+        """
         self.max_iter = max_iter
         self.learning_rate = learning_rate
         self.verbose = verbose
-        self.intercept = fit_intercept
+        self.penalty = penalty
+        self.alpha = alpha
+        self.l1_ratio = l1_ratio
+        self.fit_intercept = fit_intercept
         self.tol = tol
         self.loss = loss
-    
-        self.penalty = penalty
-        self.l1_ratio = l1_ratio
-        self.alpha = alpha
 
-        self.loss_history = []
-        self.weights = None
-        self.b = 0.0
+        self.loss_history = []  # Track loss at each iteration
+        self.weights = None     # Model weights (to be initialized during fit)
+        self.b = 0.0           # Bias term (intercept)
 
-    def mse(self, X, y) -> float:
+    def mse(self, X: np.ndarray, y: np.ndarray) -> float:
         """
-        Menghitung Mean Squared Error (MSE) dari prediksi model
-        ditambah dengan istilah penalti regularisasi (jika ada).
+        Compute the loss function (MSE or RMSE) with optional regularization penalty.
 
         Args:
-            X (np.ndarray): Fitur yang sudah diskalakan.
-            y (np.ndarray): Target yang sudah diskalakan.
+            X: Input features (n_samples, n_features).
+            y: Target values (n_samples,).
 
         Returns:
-            float: Total nilai loss (MSE + penalty).
+            float: Loss value (MSE or RMSE) plus regularization penalty.
         """
+        # Calculate prediction error: y_pred = Xw + b
+        error = X @ self.weights + self.b - y
+        mse = np.mean(error**2)
 
-        mse_cal = X @ self.weights + self.b - y
-        mse = np.mean(mse_cal**2)
-
-        penalty = 0
-
+        # Add regularization penalty
+        penalty = 0.0
         if self.penalty == "l1":
-          penalty = self.alpha * np.sum(np.abs(self.weights))
-
+            # L1 penalty: alpha * ||w||_1
+            penalty = self.alpha * np.sum(np.abs(self.weights))
         elif self.penalty == "l2":
-          penalty = self.alpha * np.sum(self.weights**2)
-
+            # L2 penalty: alpha * ||w||_2^2
+            penalty = self.alpha * np.sum(self.weights**2)
         elif self.penalty == "elasticnet":
-          l1 = self.l1_ratio * np.sum(np.abs(self.weights))
-          l2 = (1 - self.l1_ratio) * np.sum(self.weights**2)
-          penalty = self.alpha * (l1 + l2)
+            # ElasticNet: alpha * (l1_ratio * ||w||_1 + (1 - l1_ratio) * ||w||_2^2)
+            l1 = self.l1_ratio * np.sum(np.abs(self.weights))
+            l2 = (1 - self.l1_ratio) * np.sum(self.weights**2)
+            penalty = self.alpha * (l1 + l2)
 
-        if self.loss == "rmse":
-          mse = np.sqrt(mse)
-           
-        return mse + penalty
-    
+        # Return RMSE if specified, otherwise MSE
+        return np.sqrt(mse) if self.loss == "rmse" else mse + penalty
+
     def grad(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
         """
-        Menghitung gradien dari loss function (MSE ditambah penalti)
-        terhadap bobot dan bias.
+        Compute gradients of the loss function with respect to weights and bias.
 
         Args:
-            X (np.ndarray): Fitur yang sudah diskalakan.
-            y (np.ndarray): Target yang sudah diskalakan.
+            X: Input features (n_samples, n_features).
+            y: Target values (n_samples,).
 
         Returns:
-            tuple[np.ndarray, float]: Tuple berisi gradien bobot (ndarray)
-                                     dan gradien bias (float).
+            tuple: Gradients for weights (np.ndarray) and bias (float).
         """
-
+        # Prediction error: f = Xw + b - y
         f = X @ self.weights + self.b - y
 
+        # Gradient w.r.t. weights: (2/n) * X^T * error
         grad_w = X.T @ (2 * f) / len(X)
 
-        if self.intercept:
-          grad_b = np.mean(2 * f)
+        # Gradient w.r.t. bias: (2/n) * mean(error) if intercept is fitted
+        grad_b = np.mean(2 * f) if self.fit_intercept else 0.0
 
-        else:
-          grad_b = 0.0
-
+        # Add regularization gradient
         grad_w_penalty = np.zeros_like(self.weights)
-
         if self.penalty == "l1":
+            # L1 gradient: alpha * sign(w)
             grad_w_penalty = self.alpha * np.sign(self.weights)
-
         elif self.penalty == "l2":
+            # L2 gradient: 2 * alpha * w
             grad_w_penalty = 2 * self.alpha * self.weights
-
         elif self.penalty == "elasticnet":
+            # ElasticNet gradient: alpha * (l1_ratio * sign(w) + 2 * (1 - l1_ratio) * w)
             l1 = self.l1_ratio * np.sign(self.weights)
-            l2 = 2 * ((1 - self.l1_ratio) * self.weights)
-            grad_w_penalty = self.alpha * (l2 + l1)
+            l2 = 2 * (1 - self.l1_ratio) * self.weights
+            grad_w_penalty = self.alpha * (l1 + l2)
 
-        else:
-           raise ValueError("Invalid penalty type, Choose from 'l1', 'l2', or 'elasticnet'")
-
-        grad_w = grad_w + grad_w_penalty
-
+        grad_w += grad_w_penalty
         return grad_w, grad_b
-    
+
     def predict(self, X_test: np.ndarray) -> np.ndarray:
         """
-        Membuat prediksi menggunakan model yang sudah dilatih.
+        Predict target values for test data.
 
         Args:
-            X_test (np.ndarray): Data fitur uji.
+            X_test: Test features (n_samples, n_features or n_features,).
 
         Returns:
-            np.ndarray: Array NumPy prediksi target dalam skala aslinya.
-
-        Raises:
-            ValueError: Jika model belum dilatih (bobot belum didefinisikan).
+            np.ndarray: Predicted values.
         """
-
-        if X_test.ndim == 1:
-            X_processed = X_test.reshape(-1, 1)
-
-        else:
-            X_processed = X_test
+        # Handle 1D input by reshaping to (n_samples, 1)
+        X_processed = X_test.reshape(-1, 1) if X_test.ndim == 1 else X_test
 
         if self.weights is None:
-            raise ValueError("Weight not defined, try to train the model with fit() function first")
+            raise ValueError("Model not trained. Call fit() first.")
 
-        pred = X_processed @ self.weights + self.b
-
-        return pred
+        # Compute predictions: y_pred = Xw + b
+        return X_processed @ self.weights + self.b
 
     def fit(self, X_train: np.ndarray, y_train: np.ndarray):
         """
-        Melatih model regresi menggunakan Batch Gradient Descent.
-
-        Menginisialisasi bobot, mengiterasi untuk memperbarui bobot
-        dan bias berdasarkan gradien loss function (MSE) ditambah penalti
-        regularisasi (jika diterapkan).
-
-        Pelatihan berhenti jika mencapai max_iter atau jika perubahan loss
-        kurang dari nilai toleransi (tol).
+        Train the model using gradient descent.
 
         Args:
-            X_train (np.ndarray): Data fitur pelatihan.
-            y_train (np.ndarray): Data target pelatihan.
+            X_train: Training features (n_samples, n_features or n_features,).
+            y_train: Training target values (n_samples,).
         """
+        # Handle 1D input by reshaping
+        X_processed = X_train.reshape(-1, 1) if X_train.ndim == 1 else X_train
 
-        if X_train.ndim == 1:
-            X_processed = X_train.reshape(-1, 1)
+        # Convert y_train to numpy array if not already
+        y_processed = np.asarray(y_train)
 
-        else:
-            X_processed = X_train
-
-        num_samples, num_features = X_processed.shape
-
-        if self.weights is None or self.weights.shape[0] != num_features:
-         self.weights = np.zeros(num_features)
-        
-        if isinstance(y_train, (np.ndarray, list, tuple)):
-            y_processed = np.asarray(y_train)
-
-        else:
-            y_processed = y_train.to_numpy()
-
-
+        # Validate input data
         if not np.all(np.isfinite(X_processed)):
-          raise ValueError("Input features (X_train) contains NaN or Infinity values. Please clean your data.")
-
+            raise ValueError("X_train contains NaN or Infinity values.")
         if not np.all(np.isfinite(y_processed)):
-          raise ValueError("Input target (y_train) contains NaN or Infinity values. Please clean your data.")
-
+            raise ValueError("y_train contains NaN or Infinity values.")
         if X_processed.shape[0] != y_processed.shape[0]:
             raise ValueError(
-                f"Number of samples in X_train ({X_processed.shape[0]}) "
-                f"must match number of samples in y_train ({y_processed.shape[0]})."
+                f"X_train samples ({X_processed.shape[0]}) must match "
+                f"y_train samples ({y_processed.shape[0]})."
             )
 
+        # Initialize weights if None or mismatched shape
+        num_samples, num_features = X_processed.shape
+        if self.weights is None or self.weights.shape[0] != num_features:
+            self.weights = np.zeros(num_features)
+
+        # Gradient descent loop
         for i in range(self.max_iter):
-            try:
-              grad_w, grad_b = self.grad(X_processed, y_processed)
-            except ValueError:
-               grad_w, grad_b = self.grad(X_processed, y_processed.flatten())
+            # Compute gradients
+            grad_w, grad_b = self.grad(X_processed, y_processed)
+
+            # Update weights and bias
             self.weights -= self.learning_rate * grad_w
+            if self.fit_intercept:
+                self.b -= self.learning_rate * grad_b
 
-            if self.intercept:
-             self.b -= self.learning_rate * grad_b
-            try:
-              mse = self.mse(X_processed, y_processed)
-
-            except ValueError:
-               mse = self.mse(X_processed, y_processed.flatten())
+            # Compute and store loss
+            mse = self.mse(X_processed, y_processed)
             self.loss_history.append(mse)
 
-            if not np.all(np.isfinite(self.weights)) or (self.intercept and not np.isfinite(self.b)):
-                print(f"Warning: Weights or bias became NaN/Inf at epoch {i + 1}. Stopping training early.")
+            # Check for numerical stability
+            if not np.all(np.isfinite(self.weights)) or (self.fit_intercept and not np.isfinite(self.b)):
+                print(f"Warning: Weights or bias became NaN/Inf at epoch {i + 1}. Stopping training.")
                 break
 
-            if np.any(np.isnan(self.weights)) or np.any(np.isinf(self.weights)) or np.isnan(self.b) or np.isinf(self.b):
-                    raise ValueError(f"There's NaN in epoch {i + 1} during the training process")
-
-            
+            # Print progress if verbose
             if self.verbose == 1:
-                print(f"{i + 1}. Grad_w: {np.mean(self.weights):.4f}, Grad_b: {self.b:.4f}, Loss: {mse:.4f}")
-            
-            try:
-              if abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
-                 break
+                print(f"Epoch {i + 1}: Avg weight: {np.mean(self.weights):.4f}, "
+                      f"Bias: {self.b:.4f}, Loss: {mse:.4f}")
 
-            except IndexError:
-                None
+            # Check for convergence (skip first iteration)
+            if i > 0 and abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
+                break
