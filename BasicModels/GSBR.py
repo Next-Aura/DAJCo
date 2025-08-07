@@ -129,21 +129,38 @@ class BasicRegressor:
         # Compute predictions: y_pred = Xw + b
         return X_processed @ self.weights + self.b
 
-    def fit(self, X_train: np.ndarray, y_train: np.ndarray):
+    def fit(self, X_train, y_train):
         """
         Train the model using gradient descent.
 
         Args:
-            X_train: Training features (n_samples, n_features or n_features,).
+            X_train: Training features (n_samples, n_features) - can be dense or sparse matrix.
             y_train: Training target values (n_samples,).
         """
-        # Handle 1D input by reshaping
-        X_processed = X_train.reshape(-1, 1) if X_train.ndim == 1 else X_train
+        # Handle different input types (dense arrays, sparse matrices)
+        from scipy.sparse import issparse
+        
+        if issparse(X_train):
+            # Handle sparse matrices
+            X_processed = X_train.toarray()
+        else:
+            # Handle dense arrays
+            X_processed = X_train.reshape(-1, 1) if X_train.ndim == 1 else X_train
 
         # Convert y_train to numpy array if not already
         y_processed = np.asarray(y_train)
 
-        # Validate input data
+        # Ensure data is numeric and handle type conversion
+        try:
+            X_processed = X_processed.astype(np.float64)
+            y_processed = y_processed.astype(np.float64)
+        except (ValueError, TypeError) as e:
+            raise TypeError(
+                f"Input data must be numeric. Found non-numeric types in training data. "
+                f"Error: {str(e)}"
+            )
+
+        # Validate input data for NaN/Inf values
         if not np.all(np.isfinite(X_processed)):
             raise ValueError("X_train contains NaN or Infinity values.")
         if not np.all(np.isfinite(y_processed)):

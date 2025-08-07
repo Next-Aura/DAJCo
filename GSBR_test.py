@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression, ElasticNet
-from BasicModels.GSBR import BasicRegressor  # Assumes GSBR.py is in the same directory
+from BasicModels.GSBR import BasicRegressor
 
 def test_regression(n_samples=1000, n_features=20, noise=10.0, random_state=42):
     """
