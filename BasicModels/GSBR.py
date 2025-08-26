@@ -1,5 +1,5 @@
-import numpy as np
-from typing import Literal
+import numpy as np         # numpy for numerical operations
+from typing import Literal # for type hinting of string literals
 
 class BasicRegressor:
     """

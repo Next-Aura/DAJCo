@@ -20,7 +20,7 @@ GSBR (Gradient Supported Basic Regressor) is a custom linear regression model th
 
 ## Usage Example
 ```python
-from gsbr import BasicRegressor
+from BasicModels.GSBR import BasicRegressor
 reg = BasicRegressor(penalty='elasticnet', loss='rmse', alpha=0.001)
 reg.fit(X_train, y_train)
 preds = reg.predict(X_test)

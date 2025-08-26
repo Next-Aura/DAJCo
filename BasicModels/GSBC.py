@@ -1,6 +1,5 @@
-import numpy as np
-from typing import Literal
-from scipy.sparse import issparse, spmatrix
+import numpy as np                          # numpy for numerical operations
+from scipy.sparse import issparse, spmatrix # for sparse matrix handling
 
 class BasicClassifier:
     """

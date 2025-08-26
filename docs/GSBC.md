@@ -21,7 +21,7 @@ GSBC (Gradient Supported Basic Classifier) is a custom-built classification mode
 
 ## Usage Example
 ```python
-from gsbc import BasicClassifier
+from BasicModels.GSBC import BasicClassifier
 model = BasicClassifier(max_iter=500, learning_rate=0.01, verbose=1)
 model.fit(X_train, y_train)
 preds = model.predict(X_test)
