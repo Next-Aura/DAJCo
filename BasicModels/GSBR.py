@@ -41,7 +41,7 @@ class BasicRegressor:
         self.weights = None     # Model weights (to be initialized during fit)
         self.b = 0.0           # Bias term (intercept)
 
-    def mse(self, X: np.ndarray, y: np.ndarray) -> float:
+    def _loss(self, X: np.ndarray, y: np.ndarray) -> float:
         """
         Compute the loss function (MSE or RMSE) with optional regularization penalty.
 
@@ -187,7 +187,7 @@ class BasicRegressor:
                 self.b -= self.learning_rate * grad_b
 
             # Compute and store loss
-            mse = self.mse(X_processed, y_processed)
+            mse = self._loss(X_processed, y_processed)
             self.loss_history.append(mse)
 
             # Check for numerical stability
@@ -203,3 +203,13 @@ class BasicRegressor:
             # Check for convergence (skip first iteration)
             if i > 0 and abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
                 break
+
+    def loss_score(self):
+        """
+        Get the mean loss over all iterations.
+        """
+        if not self.loss_history:
+            raise ValueError("No loss history available. Train the model first.")
+        
+        mean = np.mean(self.loss_history)
+        return mean

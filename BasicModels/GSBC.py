@@ -1,5 +1,6 @@
 import numpy as np                          # numpy for numerical operations
 from scipy.sparse import issparse, spmatrix # for sparse matrix handling
+from typing import Literal                  # for type hinting of specific string literals
 
 class BasicClassifier:
     """
@@ -9,8 +10,17 @@ class BasicClassifier:
     Handles both dense and sparse input matrices.
     """
     
-    def __init__(self, max_iter: int=1000, learning_rate: float=0.001, verbose: int=0, 
-                 fit_intercept: bool=True, tol: float=0.0001):
+    def __init__(
+        self, 
+        max_iter: int=1000, 
+        learning_rate: float=0.001, 
+        verbose: int=0, 
+        fit_intercept: bool=True, 
+        tol: float=0.0001,
+        penalty: Literal['l1', 'l2', 'elasticnet'] | None=None,
+        alpha: float=0.001,
+        l1_ratio: float=0.5
+        ):
         """
         Initialize the classifier with hyperparameters.
 
@@ -20,28 +30,46 @@ class BasicClassifier:
             verbose: If 1, print training progress (epoch, loss, etc.).
             fit_intercept: If True, include a bias term (intercept).
             tol: Tolerance for early stopping based on loss convergence.
+            penalty: Type of regularization ('l1', 'l2', 'elasticnet') or None.
+            alpha: Regularization strength (used if penalty is not None).
+            l1_ratio: Mixing parameter for elastic net (0 <= l1_ratio <= 1).
 
         Raises:
-            ValueError: If max_iter, learning_rate, or tol are invalid.
+            ValueError: If max_iter, learning_rate, alpha, or tol are non-positive,
+                        or if penalty/l1_ratio are invalid.
         """
         if max_iter <= 0:
             raise ValueError("max_iter must be positive")
+
         if learning_rate <= 0:
             raise ValueError("learning_rate must be positive")
+
         if tol <= 0:
             raise ValueError("tol must be positive")
 
+        if penalty not in (None, 'l1', 'l2', 'elasticnet'):
+            raise ValueError("penalty must be one of None, 'l1', 'l2', or 'elasticnet'")
+
+        if penalty == 'elasticnet' and not (0 <= l1_ratio <= 1):
+            raise ValueError("l1_ratio must be between 0 and 1 for elasticnet penalty")
+        
+        if alpha <= 0:
+            raise ValueError("alpha must be non-negative")
+
         self.max_iter = max_iter
-        self.learning_rate = learning_rate  # Changed from lr_rate for consistency
+        self.learning_rate = learning_rate
         self.verbose = verbose
         self.fit_intercept = fit_intercept
         self.tol = tol
+        self.penalty = penalty
+        self.alpha = alpha
+        self.l1_ratio = l1_ratio
 
-        self.weights = None  # Model weights (initialized during fit)
-        self.b = 0.0        # Bias term (intercept)
-        self.loss_history = []  # Track loss at each iteration
-        self.classes = None     # Unique class labels
-        self.n_classes = 0      # Number of classes
+        self.weights = None           # Model weights (initialized during fit)
+        self.b = 0.0                  # Bias term (intercept)
+        self.loss_history = []        # Track loss at each iteration
+        self.classes = None           # Unique class labels
+        self.n_classes = 0            # Number of classes
         self.binary_classifiers = []  # List of OvR classifiers for multi-class
 
     def sigmoid(self, z: np.ndarray) -> np.ndarray:
@@ -73,6 +101,25 @@ class BasicClassifier:
         y_pred_proba = np.clip(y_pred_proba, epsilon, 1 - epsilon)
         # Binary cross-entropy: -mean(y * log(p) + (1-y) * log(1-p))
         loss = -(y_true * np.log(y_pred_proba) + (1 - y_true) * np.log(1 - y_pred_proba))
+        
+        # Add regularization penalty if specified
+        if self.penalty == 'l1':
+            loss += self.alpha * np.sum(np.abs(self.weights))
+            # L1 regularization adds the absolute values of weights
+            # Formula: alpha * ||w||_1
+
+        elif self.penalty == 'l2':
+            loss += self.alpha * np.sum(self.weights**2)
+            # L2 regularization adds the squared values of weights
+            # Formula: alpha * ||w||_2^2
+
+        elif self.penalty == 'elasticnet':
+            l1 = self.alpha * self.l1_ratio * np.sum(np.abs(self.weights))
+            l2 = (1 - self.l1_ratio) * self.alpha * np.sum(self.weights**2)
+            loss += l1 + l2
+            # Elastic Net combines L1 and L2 penalties
+            # Formula: alpha * (l1_ratio * ||w||_1 + (1 - l1_ratio) * ||w||_2^2)
+
         return np.mean(loss)
 
     def grad(self, X: np.ndarray | spmatrix, y_true: np.ndarray) -> tuple[np.ndarray, float]:
@@ -99,6 +146,21 @@ class BasicClassifier:
         grad_w = X.T @ error / X.shape[0]
         # Gradient w.r.t. bias: mean(error) if intercept is fitted
         grad_b = np.mean(error) if self.fit_intercept else 0.0
+
+        # Add regularization gradient if specified
+        if self.penalty == 'l1':
+            grad_w += self.alpha * np.sign(self.weights)
+            # L1 regularization gradient: alpha * sign(w)
+
+        elif self.penalty == 'l2':
+            grad_w += 2 * self.alpha * self.weights
+            # L2 regulation gradient: 2 * alpha * w
+
+        elif self.penalty == 'elasticnet':
+            l1 = self.l1_ratio * np.sign(self.weights)
+            l2 = 2 * ((1 - self.l1_ratio) * self.weights)
+            grad_w += self.alpha * (l1 + l2)
+            # Elastic Net gradient: alpha * (l1_ratio * sign(w) + 2 * (1 - l1_ratio) * w)
 
         return grad_w, grad_b
 
@@ -203,13 +265,16 @@ class BasicClassifier:
                 # Create binary labels: 1 for current class, 0 for others
                 y_ovr = (y_processed == class_label).astype(int)
 
-                # Train a binary classifier with same hyperparameters
+                # Train a binary classifier with same hyperparameters including regularization
                 clf = BasicClassifier(
                     max_iter=self.max_iter,
                     learning_rate=self.learning_rate,
                     verbose=0,  # Suppress verbose for individual classifiers
                     fit_intercept=self.fit_intercept,
-                    tol=self.tol
+                    tol=self.tol,
+                    penalty=self.penalty,
+                    alpha=self.alpha,
+                    l1_ratio=self.l1_ratio
                 )
                 clf.fit(X_processed, y_ovr)
                 self.binary_classifiers.append(clf)
@@ -285,3 +350,17 @@ class BasicClassifier:
             pred_indices = np.argmax(probas, axis=1)
             # Map indices to original class labels
             return np.array([self.classes[idx] for idx in pred_indices])
+    
+    def score(self, X_test: np.ndarray | spmatrix, y_test: np.ndarray) -> float:
+        """
+        Calculate accuracy score of the classifier.
+
+        Args:
+            X_test: Test features (n_samples, n_features), dense or sparse.
+            y_test: True labels for test data (n_samples,).
+
+        Returns:
+            float: Accuracy score between 0 and 1.
+        """
+        y_pred = self.predict(X_test)
+        return np.mean(y_pred == y_test)
