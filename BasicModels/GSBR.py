@@ -8,11 +8,17 @@ class BasicRegressor:
     with L1, L2, or ElasticNet penalties.
     """
     
-    def __init__(self, max_iter: int=100, learning_rate: float=0.01, verbose: int=0, 
-                 penalty: Literal["l1", "l2", "elasticnet"] | None="l2", 
-                 alpha: float=0.0001, l1_ratio: float=0.5, 
-                 fit_intercept: bool=True, tol: float=0.0001, 
-                 loss: Literal["mse", "rmse"] | None="mse"):
+    def __init__(self, 
+                max_iter: int=100, 
+                learning_rate: float=0.01, 
+                verbose: int=0, 
+                penalty: Literal["l1", "l2", "elasticnet"] | None=None, 
+                alpha: float=0.0001, 
+                l1_ratio: float=0.5, 
+                fit_intercept: bool=True, 
+                tol: float=0.0001, 
+                loss: Literal["mse", "rmse"] | None="mse"
+                ):
         """
         Initialize the regressor with hyperparameters.
 
