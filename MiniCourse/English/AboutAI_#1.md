@@ -1,4 +1,4 @@
-# Mini Course on AI and Machine Learning (ML)
+# Mini Course on AI and Machine Learning
 
 ## Lesson 1: Understanding Artificial Intelligence and Machine Learning
 
