@@ -5,7 +5,7 @@ GSBR (Gradient Supported Basic Regressor) is a custom linear regression model th
 
 ## Installation & Requirements
 ```bash
-pip install numpy scipy scikit-learn
+pip install numpy scipy
 ```
 
 ## Mathematical Formulation
