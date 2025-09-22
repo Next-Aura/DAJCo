@@ -21,7 +21,7 @@ Kursus ini dirancang simpel supaya gampang dipahami, tapi ada beberapa hal yang 
    - **Solusi:** Cek dokumentasi resmi Python atau scikit-learn, atau coba pake platform online kayak Google Colab—gratis dan gampang!
 
 4. **Bahasa yang Mungkin Terlalu Santai**  
-   - Aku sengaja bikin bahasa kursus ini santai biar asik, tapi kalo ada istilah yang kurang jelas atau terasa kelewat gaul, kasih tahuaku lewat DM atau kolom komen ya! Aku pengen semua orang bisa nyaman belajar.
+   - Aku sengaja bikin bahasa kursus ini santai biar asik, tapi kalo ada istilah yang kurang jelas atau terasa kelewat gaul, kasih tahu aku lewat DM atau kolom komen ya! Aku pengen semua orang bisa nyaman belajar.
 
 ---
 

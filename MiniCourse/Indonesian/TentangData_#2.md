@@ -6,13 +6,13 @@ Selamat datang lagi! Setelah ngobrolin apa itu AI dan pembelajaran mesin di pela
 
 ---
 
-### Kenapa Nyipain Data Itu Penting?
+### Kenapa Nyiapin Data Itu Penting?
 
-Bayangin kamu mau bikin salad buah. Kalau buahnya kotor atau udah busuk, saladnya pasti gak enak, kan? Nah, di pembelajaran mesin juga gitu. Kalau datanya berantakan atau salah, modelnya bakal kacau. Nyipain data itu kayak nyuci, ngupas, dan motong buah sebelum bikin salad—harus beres dulu biar hasilnya oke.
+Bayangin kamu mau bikin salad buah. Kalau buahnya kotor atau udah busuk, saladnya pasti gak enak, kan? Nah, di pembelajaran mesin juga gitu. Kalau datanya berantakan atau salah, modelnya bakal kacau. Nyiapin data itu kayak nyuci, ngupas, dan motong buah sebelum bikin salad—harus beres dulu biar hasilnya oke.
 
 ---
 
-### Langkah-Langkah Nyipain Data
+### Langkah-Langkah Nyiapin Data
 
 1. **Ngumpulin Data**
    - **Apa itu?** Kumpulin semua info yang mau dipelajarin sama modelmu.
@@ -79,7 +79,7 @@ Misal kamu punya tabel kayak gini:
 ### Kesimpulan Utama
 
 - Data yang bagus adalah kunci model ML yang jago.
-- Nyipain data itu kayak nyiapin bahan buat masakan enak.
+- Nyiapin data itu kayak nyiapin bahan buat masakan enak.
 - Bikin model itu tentang latih, tes, dan benerin.
 - Model sederhana pun bisa bikin prediksi yang berguna!
 

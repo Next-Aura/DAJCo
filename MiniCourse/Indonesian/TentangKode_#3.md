@@ -45,7 +45,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 ```
 
-#### 2. Nyipain Data
+#### 2. Nyiapin Data
 
 Kita bikin tabel kecil buat data rumah.
 
